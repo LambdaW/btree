@@ -4,28 +4,41 @@
 #include <stdlib.h>
 #include "queue.h"
 
-#define ORDER 3
+#define ORDER 20
 #define LEAF_NODE 1
 #define INTERNAL_NODE 0
+#define SZ 100000
+
+char map[SZ];
 
 struct BTreeNode {
     int is_leaf;
     int n;
-    int* keys;
+    unsigned* keys;
     struct BTreeNode* parent;
     struct BTreeNode** children;
+    int height;
+    struct BTreeNode* prev;
+    struct BTreeNode* next;
 };
+unsigned int leaf_node_cnt = 0;
+unsigned int internal_node_cnt = 0;
 
-
-struct BTreeNode* create_btree_node(int is_leaf, struct BTreeNode* parent) {
+struct BTreeNode* create_btree_node(int is_leaf, struct BTreeNode* parent, int height) {
     struct BTreeNode* new_node = (struct BTreeNode*)malloc(sizeof(struct BTreeNode));
     new_node->is_leaf = is_leaf;
     new_node->n = 0;
-
+    new_node->height = height;
     // what if we allocate more?
     new_node->keys = (int*)malloc(sizeof(int) * (ORDER * 2 + 1));
     new_node->children = (struct BTreeNode**)malloc(sizeof(struct BTreeNode*) * ((ORDER * 2) + 2));
     new_node->parent = parent;
+    if (is_leaf) {
+        leaf_node_cnt++;
+    } else {
+        internal_node_cnt++;
+    }
+    new_node->prev = new_node->next = NULL;
     return new_node;
 }
 
@@ -84,7 +97,7 @@ void print_tree(struct BTreeNode* root) {
 
 
 void level_print_tree(struct BTreeNode* root) {
-    struct Queue* q = create_queue(4096);
+    struct Queue* q = create_queue(40960000);
     enqueue(q, (void*)root);
     while (queue_size(q)) {
         struct BTreeNode* node = (struct BTreeNode*)dequeue(q);
@@ -165,17 +178,23 @@ void copy_children(struct BTreeNode* from, int lo, struct BTreeNode* to, int sz)
 }
 // 
 struct BTreeNode* split_leaf_node_and_insert(struct BTreeNode* to_split, int key) {
-    struct BTreeNode* sibling_node = create_btree_node(LEAF_NODE, to_split->parent);
+    struct BTreeNode* sibling_node = create_btree_node(LEAF_NODE, to_split->parent, to_split->height);
+    sibling_node->next = to_split->next;
+    if (to_split->next) {
+        to_split->next->prev = sibling_node;
+    }
+    to_split->next = sibling_node;
+    sibling_node->prev = to_split;
     array_insert(to_split->keys, to_split->n, key);
     array_copy(to_split->keys, ORDER, sibling_node->keys, 0, ORDER + 1);
     sibling_node->n = ORDER + 1;
     to_split->n = ORDER;
     int copied_key = sibling_node->keys[0];
-    printf("copied key = %d\n", copied_key);
+    // printf("copied key = %d\n", copied_key);
 
     struct BTreeNode* parent = to_split->parent;
     if (!parent) {
-        parent = create_btree_node(INTERNAL_NODE, NULL);
+        parent = create_btree_node(INTERNAL_NODE, NULL, to_split->height + 1);
         parent->keys[parent->n] = copied_key;
         parent->n++;
         parent->children[0] = to_split;
@@ -189,10 +208,11 @@ struct BTreeNode* split_leaf_node_and_insert(struct BTreeNode* to_split, int key
     adjust_ptr(parent->children, parent->n + 1, ptr_pos, sibling_node);
     parent->n += 1;
     while (parent_overflow) {
-        // split_internaal
+        // split_internal
         // split parent to two nodes and get moved key
         // move key to parent's parent
-        struct BTreeNode* parent_sibling = create_btree_node(INTERNAL_NODE, parent->parent);
+        // print_node(parent);
+        struct BTreeNode* parent_sibling = create_btree_node(INTERNAL_NODE, parent->parent, parent->height);
         int moved_key = parent->keys[ORDER];
         struct BTreeNode* promoted_child_ptr = parent->children[ORDER + 1];
         array_copy(parent->keys, ORDER + 1, parent_sibling->keys, 0, ORDER);
@@ -201,17 +221,19 @@ struct BTreeNode* split_leaf_node_and_insert(struct BTreeNode* to_split, int key
         parent_sibling->n = ORDER;
         struct BTreeNode* pp = parent->parent;
         if (!pp) {
-            pp = create_btree_node(INTERNAL_NODE, NULL);
+            pp = create_btree_node(INTERNAL_NODE, NULL, parent->height + 1);
             pp->keys[pp->n] = moved_key;
             pp->children[0] = parent;
             pp->children[1] = parent_sibling;
             pp->n += 1;
             parent->parent = parent_sibling->parent = pp;
+            // print_node(pp);
             return pp;
         }
         parent_overflow = pp->n == 2 * ORDER;
         int pos = array_insert(pp->keys, pp->n, moved_key);
-        pp->children[pos + 1] = parent_sibling;
+        // pp->children[pos + 1] = parent_sibling;
+        adjust_ptr(pp->children, pp->n + 1, pos, parent_sibling);
         pp->n += 1;
         parent = pp;
     }
@@ -245,10 +267,38 @@ void free_node(struct BTreeNode* node) {
     free(node);
 }
 
-int main() {
-    struct BTreeNode* root = create_btree_node(1, NULL);
-    for (int i = 0; i < 50; i++) {
-        root = insert(root, 0 - i);
+struct BTreeNode* get_first_node(struct BTreeNode* root) {
+    struct BTreeNode* iter = root;
+    while (!iter->is_leaf) {
+        iter = (iter->children)[0];
     }
-    level_print_tree(root);
+    return iter;
+}
+int main() {
+    struct BTreeNode* root = create_btree_node(1, NULL, 0);
+    for (int i = 0; i < SZ; i++) {
+        unsigned key = rand() % SZ;
+        if (map[key]) {
+            continue;
+        } else {
+            map[key] = 1;
+            root = insert(root, key);
+        }
+    }
+    // level_print_tree(root);
+    printf("height : %d\n", root->height);
+    printf("leaf node: %u, internal node: %u\n", leaf_node_cnt, internal_node_cnt);
+    struct BTreeNode* first = get_first_node(root);
+    int leaf_cnt = 0;
+    int min = (first->keys)[0];
+    while (first) {
+        if ((first->keys)[0] < min) {
+            printf("error!\n");
+            break;
+        }
+        leaf_cnt++;
+        first = first->next;
+    }
+    printf("\n");
+    printf("leaf_cnt = %d\n", leaf_cnt);
 }
