@@ -4,10 +4,10 @@
 #include <stdlib.h>
 #include "queue.h"
 
-#define ORDER 20
+#define ORDER 3
 #define LEAF_NODE 1
 #define INTERNAL_NODE 0
-#define SZ 100000
+#define SZ 100
 
 char map[SZ];
 
@@ -23,7 +23,7 @@ struct BTreeNode {
 };
 unsigned int leaf_node_cnt = 0;
 unsigned int internal_node_cnt = 0;
-
+unsigned int node_created = 0;
 struct BTreeNode* create_btree_node(int is_leaf, struct BTreeNode* parent, int height) {
     struct BTreeNode* new_node = (struct BTreeNode*)malloc(sizeof(struct BTreeNode));
     new_node->is_leaf = is_leaf;
@@ -39,6 +39,7 @@ struct BTreeNode* create_btree_node(int is_leaf, struct BTreeNode* parent, int h
         internal_node_cnt++;
     }
     new_node->prev = new_node->next = NULL;
+    node_created++;
     return new_node;
 }
 
@@ -88,9 +89,7 @@ void print_tree(struct BTreeNode* root) {
             print_node(child->children[i]);
         }
     }
-    printf("**********LEVEL:%d END***********\n", level);
-
-
+    printf("**********LEVEL:%d END***********\n", level); 
 }
 
 
@@ -217,8 +216,16 @@ struct BTreeNode* split_leaf_node_and_insert(struct BTreeNode* to_split, int key
         struct BTreeNode* promoted_child_ptr = parent->children[ORDER + 1];
         array_copy(parent->keys, ORDER + 1, parent_sibling->keys, 0, ORDER);
         copy_children(parent, ORDER + 1, parent_sibling, ORDER + 1);
+        // adjust children's parent pointer
+        for (int i = 0; i < ORDER + 1; i++) {
+            (parent_sibling->children)[i]->parent = parent_sibling;
+        }
         parent->n = ORDER;
         parent_sibling->n = ORDER;
+        parent_sibling->next = parent->next;
+        parent_sibling->prev = parent;
+        parent->next = parent_sibling;
+
         struct BTreeNode* pp = parent->parent;
         if (!pp) {
             pp = create_btree_node(INTERNAL_NODE, NULL, parent->height + 1);
@@ -245,9 +252,6 @@ struct BTreeNode* split_leaf_node_and_insert(struct BTreeNode* to_split, int key
     // now spill to parent
 }
 
-void split_internal_node(struct BTreeNode* to_split) {
-
-}
 // return new root of the btree
 struct BTreeNode* insert(struct BTreeNode* root, int key) {
     struct BTreeNode* leaf_node = traverse_down(root, key);
@@ -274,6 +278,67 @@ struct BTreeNode* get_first_node(struct BTreeNode* root) {
     }
     return iter;
 }
+
+void print_node_content(struct BTreeNode* n) {
+    if (!n) {
+        return;
+    }
+    printf("[");
+    for (int i = 0; i < n->n; i++) {
+        if (i != n->n - 1) {
+            printf("%d,", (n->keys)[i]);
+        } else {
+            printf("%d", (n->keys)[i]);
+        }
+    }
+    printf("]");
+}
+static unsigned int print_node_cnt = 0;
+void print_list(struct BTreeNode* n) {
+    
+    if (!n) {
+        return;
+    }
+    struct BTreeNode* it = n;
+    while (it) {
+        print_node_cnt++;
+        print_node_content(it);
+        printf("->");
+        it = it->next;
+    }
+    printf("\n");
+}
+
+int is_sorted(struct BTreeNode* node) {
+    for (int i = 0; i < node->n - 1; i++) {
+        if (node->keys[i] >= node->keys[i + 1]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+int is_valid_btree(struct BTreeNode* root) {
+    struct BTreeNode* level = root;
+    while (!level->is_leaf) {
+        while (level->next) {
+            int  r = is_sorted(level);
+            if (!r) {
+                return 0;
+            }
+            level = level->next;
+        }
+        root = (root->children)[0];
+        level = root;
+    }
+    while (level->next) {
+        if (!is_sorted(level)) {
+            return 0;
+        }
+        level = level->next;
+    }
+    return 1;
+
+}
 int main() {
     struct BTreeNode* root = create_btree_node(1, NULL, 0);
     for (int i = 0; i < SZ; i++) {
@@ -288,6 +353,7 @@ int main() {
     // level_print_tree(root);
     printf("height : %d\n", root->height);
     printf("leaf node: %u, internal node: %u\n", leaf_node_cnt, internal_node_cnt);
+    /*
     struct BTreeNode* first = get_first_node(root);
     int leaf_cnt = 0;
     int min = (first->keys)[0];
@@ -301,4 +367,22 @@ int main() {
     }
     printf("\n");
     printf("leaf_cnt = %d\n", leaf_cnt);
+    */
+   /*
+   printf("node created : %d\n", node_created);
+   struct BTreeNode* it = root;
+   while (!it->is_leaf) {
+    print_list(it);
+    printf("*************************\n");
+    it = (it->children)[0];
+   }
+   print_list(it);
+   */
+
+   int r = is_valid_btree(root);
+   if (r) {
+        printf("is valid btree\n");
+   } else {
+        printf("not valid!\n");
+   }
 }
